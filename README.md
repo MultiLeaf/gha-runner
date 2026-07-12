@@ -118,8 +118,9 @@ REGISTRATION_TOKEN=your_token_here
 RUNNER_NAME=my-docker-runner
 RUNNER_LABELS=docker,linux,custom
 EPHEMERAL=false
-# Required for Docker-in-Docker access: run `stat -c '%g' /var/run/docker.sock` on the host
-DOCKER_GID=999
+# Required for Docker-in-Docker access. Get the value by running on the host:
+#   stat -c '%g' /var/run/docker.sock
+DOCKER_GID=<paste-the-gid-here>
 ```
 
 2. Start the runner:

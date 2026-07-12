@@ -18,7 +18,7 @@ services:
       - runner_work:/runner/_work
       - runner_toolcache:/opt/hostedtoolcache
     group_add:
-      - "${DOCKER_GID:-999}"
+      - "${DOCKER_GID:?Set DOCKER_GID to the host docker.sock group ID (stat -c '%g' /var/run/docker.sock)}"
     restart: unless-stopped
     privileged: true
     deploy:
