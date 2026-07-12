@@ -4,9 +4,6 @@ echo "Starting..."
 
 set -e
 
-# Fix Docker socket permissions
-sudo chmod 666 /var/run/docker.sock
-
 if [ -z "$REPO_URL" ]; then
     echo "Error: REPO_URL environment variable is required"
     echo "Example: https://github.com/owner/repo"
@@ -64,17 +61,24 @@ fi
 
 ./config.sh $CONFIG_ARGS
 
+CLEANED_UP=0
 cleanup() {
+    if [ "$CLEANED_UP" -eq 1 ]; then
+        return
+    fi
+    CLEANED_UP=1
+
     if [ "$EPHEMERAL" != "true" ]; then
         echo "Removing runner..."
-        ./config.sh remove --token "$REGISTRATION_TOKEN"
+        ./config.sh remove --token "$REGISTRATION_TOKEN" || echo "Warning: failed to remove runner registration (token may have expired)"
     else
         echo "Ephemeral runner - no manual cleanup needed"
     fi
 }
 
-trap 'cleanup; exit 130' INT
-trap 'cleanup; exit 143' TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 echo "Starting GitHub Actions Runner $RUNNER_NAME"
 

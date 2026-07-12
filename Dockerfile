@@ -26,7 +26,6 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     lsb-release \
     software-properties-common \
-    sudo \
     tar \
     nano \
     && apt-get clean \
@@ -55,14 +54,8 @@ RUN if [ "${TARGETARCH}" = "amd64" ]; then \
 
 RUN ./bin/installdependencies.sh
 
-RUN useradd -m -s /bin/bash runner && \
-    echo "runner ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-
-RUN groupadd -f docker && usermod -aG docker runner
+RUN useradd -m -s /bin/bash runner
 RUN chown -R runner:runner /runner
-
-# Set docker group ID to match host (common docker group IDs)
-RUN groupmod -g 999 docker || groupmod -g 998 docker || true
 
 RUN mkdir -p /opt/hostedtoolcache
 RUN chown -R runner:runner /opt/hostedtoolcache
