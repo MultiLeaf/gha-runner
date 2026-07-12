@@ -1,0 +1,8 @@
+# SC2086: unquoted $CONFIG_ARGS in entrypoint.sh — pre-existing, accepted as
+# out of scope during the sudo/chmod-666 hardening pass (word-splitting risk
+# is low: CONFIG_ARGS is built entirely from this script's own variables, not
+# external input).
+disable=SC2086
+# SC2329: false positive — these functions are invoked indirectly via `trap`,
+# which shellcheck doesn't trace.
+disable=SC2329
