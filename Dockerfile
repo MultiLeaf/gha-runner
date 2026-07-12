@@ -1,13 +1,21 @@
 ARG UBUNTU_VERSION=24.04
 FROM ubuntu:${UBUNTU_VERSION}
 
-LABEL org.opencontainers.image.source="https://github.com/leogomide/gha-runner"
-LABEL org.opencontainers.image.description="GitHub Actions Self-Hosted Runner Container"
-
 ARG RUNNER_VERSION=2.335.1
+ARG RUNNER_SHA256=""
 ARG TARGETARCH
+ARG GIT_SHA=""
+
+LABEL org.opencontainers.image.source="https://github.com/MultiLeaf/gha-runner"
+LABEL org.opencontainers.image.description="GitHub Actions Self-Hosted Runner Container"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.version="${RUNNER_VERSION}"
+LABEL org.opencontainers.image.revision="${GIT_SHA}"
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN apt-get update && apt-get install -y \
     curl \
@@ -48,10 +56,22 @@ RUN if [ "${TARGETARCH}" = "amd64" ]; then \
     else \
       echo "Unsupported architecture: ${TARGETARCH}"; exit 1; \
     fi && \
-    curl -o actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz -L https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz \
-    && tar xzf actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz \
-    && rm actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz \
-    && echo "Runner version: ${RUNNER_ARCH}-${RUNNER_VERSION}"
+    TARBALL="actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz" && \
+    curl -fo "$TARBALL" -L "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${TARBALL}" && \
+    EXPECTED_SHA256="${RUNNER_SHA256}" && \
+    if [ -z "$EXPECTED_SHA256" ]; then \
+      echo "RUNNER_SHA256 not provided, fetching digest from GitHub API..." && \
+      EXPECTED_SHA256=$(curl -fsSL "https://api.github.com/repos/actions/runner/releases/tags/v${RUNNER_VERSION}" \
+        | jq -r --arg name "$TARBALL" '.assets[] | select(.name == $name) | .digest' \
+        | sed 's/^sha256://'); \
+    fi && \
+    if [ -z "$EXPECTED_SHA256" ] || [ "$EXPECTED_SHA256" = "null" ]; then \
+      echo "Error: could not determine expected SHA256 for $TARBALL"; exit 1; \
+    fi && \
+    echo "${EXPECTED_SHA256}  ${TARBALL}" | sha256sum -c - && \
+    tar xzf "$TARBALL" && \
+    rm "$TARBALL" && \
+    echo "Runner version: ${RUNNER_ARCH}-${RUNNER_VERSION} (sha256 verified: ${EXPECTED_SHA256})"
 
 RUN ./bin/installdependencies.sh
 
@@ -67,5 +87,4 @@ RUN chown runner:runner /runner/entrypoint.sh
 
 USER runner
 
-SHELL ["/bin/bash", "-c"]
 ENTRYPOINT ["/usr/bin/tini", "--", "/runner/entrypoint.sh"]

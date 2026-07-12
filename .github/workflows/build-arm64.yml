@@ -12,6 +12,20 @@ env:
   DOCKERHUB_IMAGE: multileaf/gh-runner
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+
+      - name: Lint entrypoint.sh
+        run: docker run --rm -v "$PWD":/mnt koalaman/shellcheck:stable /mnt/entrypoint.sh
+
 #  determine-runner:
 #    runs-on: ubuntu-latest
 #    environment: default
@@ -27,12 +41,15 @@ jobs:
 #          github-token: ${{ secrets.YOUR_GITHUB_TOKEN }}
 
   build-arm64:
+    needs: [lint]
 #    needs: determine-runner
 #    runs-on: ${{ fromJson(needs.determine-runner.outputs.runner) }}
     runs-on: "ubuntu-latest"
     environment: default
     permissions:
       contents: read
+      id-token: write
+      security-events: write
 
     steps:
       - name: Checkout repository
@@ -43,9 +60,13 @@ jobs:
         run: |
           LATEST_VERSION=$(curl -s https://api.github.com/repos/actions/runner/releases/latest | jq -r .tag_name)
           VERSION_NUMBER=$(echo "$LATEST_VERSION" | sed 's/^v//')
+          TARBALL="actions-runner-linux-arm64-${VERSION_NUMBER}.tar.gz"
+          SHA256=$(curl -s "https://api.github.com/repos/actions/runner/releases/tags/${LATEST_VERSION}" \
+            | jq -r --arg name "$TARBALL" '.assets[] | select(.name == $name) | .digest' | sed 's/^sha256://')
           echo "version=$VERSION_NUMBER" >> $GITHUB_OUTPUT
           echo "tag=$LATEST_VERSION" >> $GITHUB_OUTPUT
-          echo "Latest runner version: $LATEST_VERSION"
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          echo "Latest runner version: $LATEST_VERSION (sha256: $SHA256)"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -67,25 +88,90 @@ jobs:
             type=raw,value=${{ steps.runner-version.outputs.version }}-arm64
             type=raw,value=latest-arm64
 
-      - name: Build and push Docker image
+      - name: Build image for smoke test
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/arm64
+          push: false
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            RUNNER_VERSION=${{ steps.runner-version.outputs.version }}
+            RUNNER_SHA256=${{ steps.runner-version.outputs.sha256 }}
+            GIT_SHA=${{ github.sha }}
+            TARGETARCH=arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test image
+        run: |
+          IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
+          docker run --rm --entrypoint bash "$IMAGE_TAG" -c '
+            set -e
+            ./bin/Runner.Listener --version
+            if command -v sudo; then echo "sudo found, should not be installed"; exit 1; fi
+            command -v tini
+            test "$(id -un)" = "runner"
+            echo "Smoke test passed"
+          '
+
+      - name: Push image
+        id: push
         uses: docker/build-push-action@v5
         with:
           context: .
           platforms: linux/arm64
           push: true
+          sbom: true
+          provenance: mode=max
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             RUNNER_VERSION=${{ steps.runner-version.outputs.version }}
+            RUNNER_SHA256=${{ steps.runner-version.outputs.sha256 }}
+            GIT_SHA=${{ github.sha }}
             TARGETARCH=arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Scan image for vulnerabilities (report)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "${{ env.DOCKERHUB_IMAGE }}@${{ steps.push.outputs.digest }}"
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Fail on fixable critical vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "${{ env.DOCKERHUB_IMAGE }}@${{ steps.push.outputs.digest }}"
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image
+        run: cosign sign --yes "${{ env.DOCKERHUB_IMAGE }}@${{ steps.push.outputs.digest }}"
 
       - name: Generate summary
         run: |
           echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Architecture**: arm64 (linux/arm64)" >> $GITHUB_STEP_SUMMARY
           echo "- **Runner Version**: ${{ steps.runner-version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner SHA256**: ${{ steps.runner-version.outputs.sha256 }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image Digest**: ${{ steps.push.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Image Tags**:" >> $GITHUB_STEP_SUMMARY
           echo "  - \`${{ env.DOCKERHUB_IMAGE }}:${{ steps.runner-version.outputs.version }}-arm64\`" >> $GITHUB_STEP_SUMMARY
           echo "  - \`${{ env.DOCKERHUB_IMAGE }}:latest-arm64\`" >> $GITHUB_STEP_SUMMARY

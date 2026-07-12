@@ -1,0 +1,8 @@
+ignored:
+  # This image intentionally always installs the latest apt packages (security
+  # patches from Ubuntu), so pinning individual package versions is counter to
+  # the project's goals rather than a real hardening gap.
+  - DL3008
+  # Cosmetic/size-optimization suggestions, not correctness or security issues.
+  - DL3015
+  - DL3059
