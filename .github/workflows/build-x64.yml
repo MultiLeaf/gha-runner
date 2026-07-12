@@ -123,7 +123,7 @@ jobs:
       # finding blocks the push below, instead of the vulnerable image already
       # being public by the time a post-push scan would fail the job.
       - name: Scan image for vulnerabilities (report)
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "${{ steps.local-tag.outputs.tag }}"
           format: sarif
@@ -137,7 +137,7 @@ jobs:
           sarif_file: trivy-results.sarif
 
       - name: Fail on fixable critical vulnerabilities
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "${{ steps.local-tag.outputs.tag }}"
           severity: CRITICAL
