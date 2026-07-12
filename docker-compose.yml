@@ -23,6 +23,12 @@ services:
       - "${DOCKER_GID:?Set DOCKER_GID to the host docker.sock group ID (stat -c '%g' /var/run/docker.sock)}"
     restart: unless-stopped
     privileged: true
+    # Graceful shutdown waits for the runner to finish its own job cancellation,
+    # then makes 1-2 GitHub API calls to fetch a fresh removal token and
+    # deregister. Docker's 10s default is too short for that and would SIGKILL
+    # mid-shutdown, leaving the runner registered as "offline" — the exact
+    # failure mode this is meant to avoid.
+    stop_grace_period: 60s
     deploy:
       replicas: 3
 

@@ -98,6 +98,14 @@ signal to the runner process and waits for it to actually finish its own gracefu
 job-cancellation/shutdown before deregistering — it does not exit immediately and
 leave the runner orphaned mid-shutdown.
 
+This graceful shutdown can take longer than Docker's 10s default grace period,
+especially with a job in progress plus the 1-2 GitHub API calls needed to fetch a
+fresh removal token. Give it more time or it gets SIGKILLed mid-shutdown, which
+leaves the runner registered as "offline" instead of properly deregistered:
+`docker-compose.yml` already sets `stop_grace_period: 60s`; for plain `docker run`,
+stop the container with `docker stop -t 60 <container>` (or pass `--stop-timeout 60`
+at `docker run` time).
+
 ## Usage
 
 ### Using Pre-built Images
