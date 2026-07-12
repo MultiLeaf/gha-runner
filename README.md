@@ -106,6 +106,34 @@ leaves the runner registered as "offline" instead of properly deregistered:
 stop the container with `docker stop -t 60 <container>` (or pass `--stop-timeout 60`
 at `docker run` time).
 
+## Supply Chain
+
+- **Runner tarball integrity**: the build verifies the downloaded
+  `actions-runner-linux-*.tar.gz` against the SHA-256 digest GitHub publishes for that
+  asset via its Releases API (`digest` field, a different origin than the download
+  itself), failing the build on any mismatch. This catches corruption/tampering on the
+  download path; it doesn't protect against a compromised release at the source, which
+  would require manually pinning known-good hashes instead of always tracking the
+  latest release automatically.
+- **SBOM & provenance**: published images include an SBOM and build provenance
+  attestation (via `docker buildx`'s native support), inspectable with
+  `docker buildx imagetools inspect --format '{{ json .SBOM }}' multileaf/gh-runner:latest-x64`.
+- **Signed images**: images are signed keylessly with [cosign](https://github.com/sigstore/cosign)
+  via GitHub Actions' own OIDC identity (no private keys to manage or leak). Verify an
+  image before running it, especially on a persistent VPS deployment, with:
+  ```bash
+  cosign verify \
+    --certificate-identity-regexp "^https://github.com/MultiLeaf/gha-runner/.github/workflows/" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    multileaf/gh-runner@<digest>
+  ```
+- **Vulnerability scanning**: every build is scanned with [Trivy](https://github.com/aquasecurity/trivy)
+  *before* it's published — results are visible in the repo's Security tab, and the
+  build only fails (blocking the push) on CRITICAL vulnerabilities that have a fix
+  available. Ubuntu/Docker-Engine-based images realistically never reach zero
+  findings across all severities, so blocking on everything would just leave the
+  pipeline permanently red without adding real protection.
+
 ## Usage
 
 ### Using Pre-built Images
