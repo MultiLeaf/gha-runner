@@ -44,6 +44,30 @@ For persistent logs and runner data between container restarts:
 - **`/runner/_work`** - Job execution logs and temporary files
 - **`/opt/hostedtoolcache`** - Tool cache for faster job execution (optional)
 
+## Docker Socket Access
+
+The container does not modify `/var/run/docker.sock` permissions or its own group
+membership at runtime (no `chmod 666`, no `sudo`, no dynamic `groupmod`/`usermod`
+inside the container). Instead, grant the container the host socket's group via
+Docker's own `--group-add` (or `group_add` in Compose), which is the safe, standard
+way to do this:
+
+```bash
+# Find the docker.sock group ID on the host
+DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
+
+docker run -d \
+  ... \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  --group-add "$DOCKER_GID" \
+  --privileged \
+  multileaf/gh-runner:latest-x64
+```
+
+If you skip this, any step in a job that calls the Docker CLI will fail with a clear
+"permission denied" error against the socket — nothing silently falls back to a
+looser permission mode.
+
 ## Usage
 
 ### Using Pre-built Images
@@ -56,6 +80,8 @@ The project automatically builds and publishes images to **Docker Hub**: `multil
 - `{version}-x64` / `{version}-arm64` - Specific runner version (e.g., `2.311.0-x64`)
 
 ```bash
+DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
+
 # x64 architecture
 docker run -d \
   -e REPO_URL=https://github.com/owner/repo \
@@ -65,6 +91,7 @@ docker run -d \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v runner_work:/runner/_work \
   -v runner_toolcache:/opt/hostedtoolcache \
+  --group-add "$DOCKER_GID" \
   --privileged \
   multileaf/gh-runner:latest-x64
 
@@ -77,6 +104,7 @@ docker run -d \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v runner_work:/runner/_work \
   -v runner_toolcache:/opt/hostedtoolcache \
+  --group-add "$DOCKER_GID" \
   --privileged \
   multileaf/gh-runner:latest-arm64
 ```
@@ -90,6 +118,9 @@ REGISTRATION_TOKEN=your_token_here
 RUNNER_NAME=my-docker-runner
 RUNNER_LABELS=docker,linux,custom
 EPHEMERAL=false
+# Required for Docker-in-Docker access. Get the value by running on the host:
+#   stat -c '%g' /var/run/docker.sock
+DOCKER_GID=<paste-the-gid-here>
 ```
 
 2. Start the runner:
