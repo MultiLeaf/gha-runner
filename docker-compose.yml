@@ -1,11 +1,9 @@
-version: '3.8'
-
 services:
   github-runner:
     build:
       context: .
       args:
-        RUNNER_VERSION: ${RUNNER_VERSION:-2.328.0}
+        RUNNER_VERSION: ${RUNNER_VERSION:-2.335.1}
         UBUNTU_VERSION: ${UBUNTU_VERSION:-24.04}
     environment:
       - REPO_URL=${REPO_URL}
@@ -29,8 +27,20 @@ services:
     # mid-shutdown, leaving the runner registered as "offline" — the exact
     # failure mode this is meant to avoid.
     stop_grace_period: 60s
+    # Bounds the runner process itself (git/npm/build-tool memory and CPU use)
+    # against accidental runaway jobs. Does NOT sandbox `docker build`/`docker run`
+    # invoked by a job: those run as sibling containers on the host's dockerd via
+    # the mounted socket, outside this container's cgroup entirely. Combined with
+    # --privileged, these limits are not an adversarial security boundary against
+    # a malicious job — only protection against accidental resource exhaustion.
+    # See README "Resource Limits" for details.
     deploy:
       replicas: 3
+      resources:
+        limits:
+          cpus: "${RUNNER_CPU_LIMIT:-2}"
+          memory: ${RUNNER_MEMORY_LIMIT:-4G}
+          pids: ${RUNNER_PIDS_LIMIT:-512}
 
 volumes:
   runner_work:
