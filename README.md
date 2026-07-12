@@ -48,7 +48,7 @@ For persistent logs and runner data between container restarts:
 
 ### Using Pre-built Images
 
-The project automatically builds and publishes images to **Docker Hub**: `leogomide/gha-runner`
+The project automatically builds and publishes images to **Docker Hub**: `multileaf/gh-runner`
 
 ### Available Tags
 
@@ -66,7 +66,7 @@ docker run -d \
   -v runner_work:/runner/_work \
   -v runner_toolcache:/opt/hostedtoolcache \
   --privileged \
-  leogomide/gha-runner:latest-x64
+  multileaf/gh-runner:latest-x64
 
 # ARM64 architecture
 docker run -d \
@@ -78,7 +78,7 @@ docker run -d \
   -v runner_work:/runner/_work \
   -v runner_toolcache:/opt/hostedtoolcache \
   --privileged \
-  leogomide/gha-runner:latest-arm64
+  multileaf/gh-runner:latest-arm64
 ```
 
 ### Using Docker Compose

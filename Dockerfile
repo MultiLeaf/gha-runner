@@ -4,7 +4,7 @@ FROM ubuntu:${UBUNTU_VERSION}
 LABEL org.opencontainers.image.source="https://github.com/leogomide/gha-runner"
 LABEL org.opencontainers.image.description="GitHub Actions Self-Hosted Runner Container"
 
-ARG RUNNER_VERSION=2.328.0
+ARG RUNNER_VERSION=2.335.1
 ARG TARGETARCH
 ENV DEBIAN_FRONTEND=noninteractive
 ENV AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache

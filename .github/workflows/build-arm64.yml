@@ -9,7 +9,7 @@ on:
     - cron: '0 0 * * *' # Daily at midnight UTC
 
 env:
-  DOCKERHUB_IMAGE: leogomide/gha-runner
+  DOCKERHUB_IMAGE: multileaf/gh-runner
 
 jobs:
 #  determine-runner:
