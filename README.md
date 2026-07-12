@@ -106,6 +106,26 @@ leaves the runner registered as "offline" instead of properly deregistered:
 stop the container with `docker stop -t 60 <container>` (or pass `--stop-timeout 60`
 at `docker run` time).
 
+## Resource Limits
+
+`docker-compose.yml` caps each replica's CPU, memory, and process count, configurable
+via `RUNNER_CPU_LIMIT` (default `2`), `RUNNER_MEMORY_LIMIT` (default `4G`), and
+`RUNNER_PIDS_LIMIT` (default `512`).
+
+**What this does and doesn't protect against**: these limits bound the runner process
+itself (git, npm, build toolchains running directly inside the container) against
+accidental runaway resource use. They do **not** sandbox `docker build`/`docker run`
+invoked by a job — those run as sibling containers on the host's `dockerd` via the
+mounted socket, entirely outside this container's cgroup, so they aren't capped by
+these settings. Combined with `--privileged`, this means resource limits are not an
+adversarial security boundary against a malicious job — only protection against
+accidental exhaustion (a runaway `npm install`, an unbounded build cache, etc.).
+
+If a job hits the memory limit, the kernel OOM-killer sends `SIGKILL` to the offending
+process — this shows up as an unexplained `exit code 137` in job logs, not a clear
+"out of memory" error. If you see that, raise `RUNNER_MEMORY_LIMIT` or investigate the
+job's actual memory use before assuming it's a bug in the job itself.
+
 ## Supply Chain
 
 - **Runner tarball integrity**: the build verifies the downloaded
@@ -142,8 +162,19 @@ The project automatically builds and publishes images to **Docker Hub**: `multil
 
 ### Available Tags
 
-- `latest-x64` / `latest-arm64` - Latest runner version for each architecture
-- `{version}-x64` / `{version}-arm64` - Specific runner version (e.g., `2.311.0-x64`)
+- `latest-x64` / `latest-arm64` - Latest runner version for each architecture.
+  **Floating**: rebuilt daily to pick up OS security patches, so the content behind
+  this tag changes over time even though the tag name doesn't.
+- `{version}-x64` / `{version}-arm64` - Specific runner version (e.g., `2.311.0-x64`).
+  Also floating for the same reason — as long as this is the latest runner release,
+  the daily rebuild keeps republishing under this same tag with updated OS packages.
+
+For a truly immutable reference, pin by digest instead of tag (each build's summary
+prints the digest) — and verify it with `cosign` first (see [Supply Chain](#supply-chain)),
+since pinning an unverified digest doesn't guarantee anything on its own:
+```bash
+docker pull multileaf/gh-runner@sha256:<digest>
+```
 
 The examples below use `REGISTRATION_TOKEN`; replace `-e REGISTRATION_TOKEN=...` with
 `-e GITHUB_PAT=...` for a persistent deployment that doesn't need manual token
@@ -193,6 +224,11 @@ EPHEMERAL=false
 # Required for Docker-in-Docker access. Get the value by running on the host:
 #   stat -c '%g' /var/run/docker.sock
 DOCKER_GID=<paste-the-gid-here>
+# OPTIONAL Per-replica resource limits (defaults: 2 CPUs, 4G memory, 512 pids)
+# See "Resource Limits" for what these do and don't protect against.
+RUNNER_CPU_LIMIT=2
+RUNNER_MEMORY_LIMIT=4G
+RUNNER_PIDS_LIMIT=512
 ```
 
 2. Start the runner:
@@ -227,13 +263,18 @@ docker-compose up -d --scale github-runner=5
 
 Each runner instance will have a unique name with the container hostname appended (e.g., `my-runner-abc123`, `my-runner-def456`), preventing naming conflicts.
 
+Each replica gets its own [resource limits](#resource-limits), so total consumption
+scales linearly: with the defaults (2 CPU / 4G memory each), 5 replicas can use up to
+10 CPUs and 20G of memory if all are busy at once. Size `RUNNER_CPU_LIMIT`/
+`RUNNER_MEMORY_LIMIT` and the replica count to what your VPS actually has available.
+
 ### Building the image:
 ```bash
-# Build with default version (2.328.0)
+# Build with default version (2.335.1)
 docker build -t github-runner .
 
 # Build with specific version
-docker build --build-arg RUNNER_VERSION=2.328.0 -t github-runner .
+docker build --build-arg RUNNER_VERSION=2.335.1 -t github-runner .
 ```
 
 ## Included Features
