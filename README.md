@@ -127,12 +127,12 @@ at `docker run` time).
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
     multileaf/gh-runner@<digest>
   ```
-- **Vulnerability scanning**: every build is scanned with [Trivy](https://github.com/aquasecurity/trivy);
-  results are visible in the repo's Security tab. The build only fails on CRITICAL
-  vulnerabilities that have a fix available — Ubuntu/Docker-Engine-based images
-  realistically never reach zero findings across all severities, so blocking on
-  everything would just leave the pipeline permanently red without adding real
-  protection.
+- **Vulnerability scanning**: every build is scanned with [Trivy](https://github.com/aquasecurity/trivy)
+  *before* it's published — results are visible in the repo's Security tab, and the
+  build only fails (blocking the push) on CRITICAL vulnerabilities that have a fix
+  available. Ubuntu/Docker-Engine-based images realistically never reach zero
+  findings across all severities, so blocking on everything would just leave the
+  pipeline permanently red without adding real protection.
 
 ## Usage
 

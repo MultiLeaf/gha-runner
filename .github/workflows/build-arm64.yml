@@ -106,10 +106,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Resolve local image tag
+        id: local-tag
+        run: echo "tag=$(echo "${{ steps.meta.outputs.tags }}" | head -1)" >> "$GITHUB_OUTPUT"
+
       - name: Smoke test image
         run: |
-          IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
-          docker run --rm --entrypoint bash "$IMAGE_TAG" -c '
+          docker run --rm --entrypoint bash "${{ steps.local-tag.outputs.tag }}" -c '
             set -e
             ./bin/Runner.Listener --version
             if command -v sudo; then echo "sudo found, should not be installed"; exit 1; fi
@@ -117,6 +120,31 @@ jobs:
             test "$(id -un)" = "runner"
             echo "Smoke test passed"
           '
+
+      # Scan the locally-loaded (not-yet-published) image so a fixable CRITICAL
+      # finding blocks the push below, instead of the vulnerable image already
+      # being public by the time a post-push scan would fail the job.
+      - name: Scan image for vulnerabilities (report)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "${{ steps.local-tag.outputs.tag }}"
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Fail on fixable critical vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "${{ steps.local-tag.outputs.tag }}"
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
 
       - name: Push image
         id: push
@@ -136,28 +164,6 @@ jobs:
             TARGETARCH=arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Scan image for vulnerabilities (report)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: "${{ env.DOCKERHUB_IMAGE }}@${{ steps.push.outputs.digest }}"
-          format: sarif
-          output: trivy-results.sarif
-          severity: CRITICAL,HIGH
-          exit-code: '0'
-
-      - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-results.sarif
-
-      - name: Fail on fixable critical vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: "${{ env.DOCKERHUB_IMAGE }}@${{ steps.push.outputs.digest }}"
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
