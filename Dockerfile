@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y \
     software-properties-common \
     tar \
     nano \
+    tini \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -67,4 +68,4 @@ RUN chown runner:runner /runner/entrypoint.sh
 USER runner
 
 SHELL ["/bin/bash", "-c"]
-ENTRYPOINT ["/runner/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/runner/entrypoint.sh"]

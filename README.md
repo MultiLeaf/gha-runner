@@ -4,12 +4,28 @@ Docker container for automated GitHub Actions self-hosted runners.
 
 Inspired from https://github.com/chaddyc/gha-runner and tweaked for my personal needs
 
-## How to get the Registration Token
+## Authentication: REGISTRATION_TOKEN vs GITHUB_PAT
 
-1. Access your repository on GitHub
-2. Go to Settings > Actions > Runners
-3. Click on "New self-hosted runner"
-4. Copy the token displayed in the "Configure" section
+The container needs exactly **one** of these two, never both:
+
+- **`REGISTRATION_TOKEN`** — a one-time token you copy manually from
+  `Settings > Actions > Runners > New self-hosted runner`. It expires after 1 hour.
+  Fine for a single manual run, painful for a long-lived/persistent runner (e.g. on a
+  VPS): every restart after the token expires needs a fresh manual token, and if the
+  container has been running for a while, the *same* stale token is reused to
+  deregister the runner on shutdown, which fails and leaves it listed as "offline" in
+  GitHub.
+- **`GITHUB_PAT`** — a token with **Administration: Read & write** permission on the
+  repo (fine-grained PAT scoped to just this one repo, not the whole org, is strongly
+  recommended). The container uses it to mint a **fresh** registration token on
+  startup and a **fresh** removal token on shutdown, automatically, via the GitHub
+  API. This is the recommended mode for a persistent runner (VPS/EasyPanel-style
+  deployment) since it never needs manual token renewal.
+  **Note the blast radius**: `Administration: Read & write` also allows deleting the
+  repo, managing webhooks, and branch protections — treat this PAT like a secret with
+  real admin power, not a throwaway credential. The container never exposes it (or
+  the tokens it fetches) to the jobs it runs — both are scrubbed from the process
+  environment right after registration, before the runner starts accepting jobs.
 
 ## Required Environment Variables
 
@@ -17,8 +33,9 @@ Inspired from https://github.com/chaddyc/gha-runner and tweaked for my personal 
 # GitHub repository URL
 REPO_URL=https://github.com/owner/repo
 
-# Runner registration token (obtained from Settings > Actions > Runners > New runner)
+# Exactly one of the two:
 REGISTRATION_TOKEN=<your-registration-token>
+# GITHUB_PAT=<fine-grained-PAT-with-Administration:Read&write-on-this-repo>
 
 # OPTIONAL Runner name (default: docker-runner-{hostname})
 RUNNER_NAME=<your-runner-name>
@@ -31,9 +48,12 @@ RUNNER_LABELS=<label1,label2>
 # https://docs.github.com/pt/actions/reference/runners/self-hosted-runners#ephemeral-runners-for-autoscaling
 EPHEMERAL=false
 
-# OPTIONAL Disable automatic runner software updates (default: false)
+# OPTIONAL Disable automatic runner software updates (default: true)
+# The image is rebuilt daily with the latest runner version via CI, so runtime
+# self-update is disabled by default to keep the running version traceable to the
+# image tag. Set to false to let the runner update itself at runtime instead.
 # https://docs.github.com/pt/actions/reference/runners/self-hosted-runners#runner-software-updates-on-self-hosted-runners
-DISABLE_UPDATE=false
+DISABLE_UPDATE=true
 
 ````
 
@@ -68,6 +88,24 @@ If you skip this, any step in a job that calls the Docker CLI will fail with a c
 "permission denied" error against the socket — nothing silently falls back to a
 looser permission mode.
 
+## Signal Handling
+
+The image runs [`tini`](https://github.com/krallin/tini) as PID 1 (`ENTRYPOINT
+["/usr/bin/tini", "--", "/runner/entrypoint.sh"]`), so it reaps zombie processes
+correctly and delivers signals to `entrypoint.sh` the way a normal init process
+would. On `docker stop` (SIGTERM) or Ctrl-C (SIGINT), `entrypoint.sh` forwards the
+signal to the runner process and waits for it to actually finish its own graceful
+job-cancellation/shutdown before deregistering — it does not exit immediately and
+leave the runner orphaned mid-shutdown.
+
+This graceful shutdown can take longer than Docker's 10s default grace period,
+especially with a job in progress plus the 1-2 GitHub API calls needed to fetch a
+fresh removal token. Give it more time or it gets SIGKILLed mid-shutdown, which
+leaves the runner registered as "offline" instead of properly deregistered:
+`docker-compose.yml` already sets `stop_grace_period: 60s`; for plain `docker run`,
+stop the container with `docker stop -t 60 <container>` (or pass `--stop-timeout 60`
+at `docker run` time).
+
 ## Usage
 
 ### Using Pre-built Images
@@ -78,6 +116,10 @@ The project automatically builds and publishes images to **Docker Hub**: `multil
 
 - `latest-x64` / `latest-arm64` - Latest runner version for each architecture
 - `{version}-x64` / `{version}-arm64` - Specific runner version (e.g., `2.311.0-x64`)
+
+The examples below use `REGISTRATION_TOKEN`; replace `-e REGISTRATION_TOKEN=...` with
+`-e GITHUB_PAT=...` for a persistent deployment that doesn't need manual token
+renewal (see [Authentication](#authentication-registration_token-vs-github_pat)).
 
 ```bash
 DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
@@ -115,6 +157,8 @@ docker run -d \
 ```bash
 REPO_URL=https://github.com/owner/repo
 REGISTRATION_TOKEN=your_token_here
+# Or, for a persistent deployment (recommended, no manual token renewal):
+# GITHUB_PAT=your_fine_grained_pat_here
 RUNNER_NAME=my-docker-runner
 RUNNER_LABELS=docker,linux,custom
 EPHEMERAL=false
@@ -172,7 +216,13 @@ docker build --build-arg RUNNER_VERSION=2.328.0 -t github-runner .
 - Python 3
 - Git
 - Essential build tools
-- Automatic runner cleanup on container stop
+- Automatic runner cleanup on container stop, with graceful shutdown via `tini` +
+  signal forwarding to the runner process
+- Optional GitHub PAT-based authentication for persistent deployments (no manual
+  token renewal)
+- Runtime self-update disabled by default (`DISABLE_UPDATE=true`) — the image is
+  rebuilt daily with the latest runner version via CI, keeping the running version
+  traceable to the image tag
 - Configurable runner version via build argument
 - Multi-architecture support (x64/ARM64)
 - Ephemeral mode support - runs only one job and removes itself automatically
