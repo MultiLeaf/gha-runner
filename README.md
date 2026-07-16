@@ -126,6 +126,26 @@ process — this shows up as an unexplained `exit code 137` in job logs, not a c
 "out of memory" error. If you see that, raise `RUNNER_MEMORY_LIMIT` or investigate the
 job's actual memory use before assuming it's a bug in the job itself.
 
+## Playwright / E2E Tests
+
+Jobs run as the non-root `runner` user with no `sudo`, so anything that needs
+`apt` (system-level dependencies) can't be installed from a job step. This is
+relevant for E2E testing with [Playwright](https://playwright.dev), which needs
+**two** things:
+
+- **Browser binaries** (Chromium) — downloaded per-job by `npx playwright install`
+  to the runner user's cache (`~/.cache/ms-playwright`). No root needed; each
+  project pins its own Playwright/browser version, so nothing is baked in.
+- **Chromium system libraries** (`libnss3`, `libgbm1`, `libatk`, `libasound2`,
+  ...) — installed via `apt` and therefore **preinstalled in the image at build
+  time** with `npx playwright install-deps chromium`.
+
+So a Playwright job only needs `npx playwright install` (binaries); the OS
+libraries are already present. The package list tracks Playwright's own installer
+(`latest`) rather than a hand-maintained list, and since system deps are
+stable/cumulative, the superset covers older Playwright versions too. The daily
+CI rebuild keeps it current.
+
 ## Supply Chain
 
 - **Runner tarball integrity**: the build verifies the downloaded
@@ -285,6 +305,7 @@ docker build --build-arg RUNNER_VERSION=2.335.1 -t github-runner .
 - Python 3
 - Git
 - Essential build tools
+- Chromium system libraries for Playwright preinstalled (see [Playwright / E2E Tests](#playwright--e2e-tests))
 - Automatic runner cleanup on container stop, with graceful shutdown via `tini` +
   signal forwarding to the runner process
 - Optional GitHub PAT-based authentication for persistent deployments (no manual

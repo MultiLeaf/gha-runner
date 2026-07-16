@@ -47,6 +47,16 @@ RUN curl -fsSL https://get.docker.com -o get-docker.sh && \
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
     && apt-get install -y nodejs
 
+# Chromium system libraries required by Playwright for E2E tests. Job steps run
+# as the non-root `runner` user (no sudo), so anything needing apt must be baked
+# into the image at build time. Only OS libs are installed here; the browser
+# binaries are downloaded per-job (npx playwright install) so each project pins
+# its own Playwright version. Using `latest` keeps the broadest superset of libs:
+# system deps are stable/cumulative, so they cover older Playwright versions too.
+# `install-deps` is idempotent and the image is rebuilt daily by CI.
+RUN npx --yes playwright install-deps chromium \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /runner
 
 RUN if [ "${TARGETARCH}" = "amd64" ]; then \
