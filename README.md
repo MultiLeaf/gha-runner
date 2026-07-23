@@ -172,7 +172,11 @@ CI rebuild keeps it current.
   build only fails (blocking the push) on CRITICAL vulnerabilities that have a fix
   available. Ubuntu/Docker-Engine-based images realistically never reach zero
   findings across all severities, so blocking on everything would just leave the
-  pipeline permanently red without adding real protection.
+  pipeline permanently red without adding real protection. A [`.trivyignore`](.trivyignore)
+  file suppresses CVEs that originate in upstream-bundled dependencies (e.g. the
+  actions/runner's own Node.js modules) which cannot be patched at this layer —
+  each entry is commented with the reason and a reminder to revisit once the
+  upstream ships a fix.
 
 ## Usage
 
