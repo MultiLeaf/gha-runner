@@ -1,0 +1,4 @@
+# Bundled inside actions/runner (runner/externals/node20/lib/node_modules/).
+# Cannot be patched at this layer — needs an upstream fix in actions/runner.
+# Revisit once the runner version that ships tar >= 7.5.19 is released.
+CVE-2026-59873
