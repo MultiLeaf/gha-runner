@@ -55,6 +55,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
 # system deps are stable/cumulative, so they cover older Playwright versions too.
 # `install-deps` is idempotent and the image is rebuilt daily by CI.
 RUN npx --yes playwright install-deps chromium \
+    && npm cache clean --force \
+    && rm -rf /root/.npm/_npx /root/.local/share/pnpm \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /runner
